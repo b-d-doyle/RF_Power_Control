@@ -402,7 +402,9 @@ int getV(){
   if (ch==-1) return -1;    //If failed, return -1
   if (ch== 5) {Serial.println("WRN: CHANNEL_NONE SELECTED");} //Warn but send it to AD9959
   
-  return dds.read(ch_addr[ch]);
+  dds.setChannels(ch_addr[ch]);
+  uint32_t response = dds.read(MyAD9959::ACR);
+  return response;
 }
 //getP
 //Phase from AD9959 register
@@ -414,7 +416,10 @@ int getP(){
   ch = inputChannel();      //Get channel from buffer
   if (ch==-1) return -1;    //If failed, return -1
   if (ch== 5) {Serial.println("WRN: CHANNEL_NONE SELECTED");} //Warn but send it to AD9959
-  return 0;
+  
+  dds.setChannels(ch_addr[ch]);
+  uint32_t response = dds.read(MyAD9959::CPOW);
+  return response;
 }
 //getF
 //Frequency from AD9959 register
@@ -426,7 +431,10 @@ int getF(){
   ch = inputChannel();      //Get channel from buffer
   if (ch==-1) return -1;    //If failed, return -1
   if (ch== 5) {Serial.println("WRN: CHANNEL_NONE SELECTED");} //Warn but send it to AD9959
-  return 0;
+  
+  dds.setChannels(ch_addr[ch]);
+  uint32_t response = dds.read(MyAD9959::CFTW);
+  return response;
 }
 
 //mesV
