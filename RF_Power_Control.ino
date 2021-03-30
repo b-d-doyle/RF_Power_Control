@@ -202,9 +202,9 @@ int inputChannel(){
 int setActiveChannels(){
   //Bring in first channel to make sure it's okay:
   int ch = inputChannel();
-  if(ch==-1){Serial.println("Expected at least one channel number."); return -1;}
-  if(ch==-2){Serial.println("First channel number invalid."); return -2;}
-  if(ch==5){Serial.println("Channel 5 will mean NONE, but that's not implemented for PID control. Sorry.");return -2;}
+  if(ch==-1){Serial.println(F("Expected at least one channel number.")); return -1;}
+  if(ch==-2){Serial.println(F("First channel number invalid.")); return -2;}
+  if(ch==5){Serial.println(F("Channel 5 will mean NONE, but that's not implemented for PID control. Sorry."));return -2;}
   if(ch==4 ){ //ch4 means ALL
     delete[] active_channels;
     active_channels = new int[4]{0,1,2,3};
@@ -224,7 +224,7 @@ int setActiveChannels(){
   while(ch != -1){
     //Check that channel is valid:
     if(ch==-2||ch==4||ch==5){ //If channel number is invalid, revert to old info and make fun of user.
-      Serial.println("Bad channel list. Reverting to old list");
+      Serial.println(F("Bad channel list. Reverting to old list"));
       if(active_channels != old_chs) delete[] active_channels; //We shouldn't even get here if it's old_chs, but still.
       active_channels=old_chs;
       num_ch = old_num;
@@ -253,7 +253,7 @@ int setActiveChannels(){
 }
 
 int getActiveChannels(){
-  Serial.print("CHs:  ");
+  Serial.print(F("CHs:  "));
   for(int i = 0; i<num_ch; i++){
     if(i>0)Serial.print(',');
     Serial.print(active_channels[i]);
@@ -270,7 +270,7 @@ int setVtarget(){
   //Handle channel: 
   ch = inputChannel();      //Get channel from buffer
   if (ch==-1) return -1;    //If failed, return -1
-  if (ch== 5) {Serial.println("WRN: CHANNEL_NONE SELECTED");return 0;} //Warn and return 0. Nothing to do.
+  if (ch== 5) {Serial.println(F("WRN: CHANNEL_NONE SELECTED"));return 0;} //Warn and return 0. Nothing to do.
   
   //get setPoint:
   arg = sCmd.next();                          // Get v from the SerialCommand object buffer
@@ -307,7 +307,7 @@ int getVtarget(){
   //Handle channel: 
   ch = inputChannel();      //Get channel from buffer
   if (ch==-1) return -1;    //If failed, return -1
-  if (ch== 5) {Serial.println("WRN: CHANNEL_NONE SELECTED");return 0;} //Warn and return 0. Nothing to do.
+  if (ch== 5) {Serial.println(F("WRN: CHANNEL_NONE SELECTED"));return 0;} //Warn and return 0. Nothing to do.
 
   //Send to worker:
   if (ch==4){ //ch==4 means do all valid channels.
@@ -333,7 +333,7 @@ int setV(){
   //Handle channel: 
   ch = inputChannel();      //Get channel from buffer
   if (ch==-1) return -1;    //If failed, return -1
-  if (ch== 5) {Serial.println("WRN: CHANNEL_NONE SELECTED");} //Warn but send it to AD9959
+  if (ch== 5) {Serial.println(F("WRN: CHANNEL_NONE SELECTED"));} //Warn but send it to AD9959
   
   //Handle voltage:
   arg = sCmd.next();                          // Get v from the SerialCommand object buffer
@@ -369,7 +369,7 @@ int setP(){
   //Handle channel: 
   ch = inputChannel();      //Get channel from buffer
   if (ch==-1) return -1;    //If failed, return -1
-  if (ch== 5) {Serial.println("WRN: CHANNEL_NONE SELECTED");} //Warn but send it to AD9959
+  if (ch== 5) {Serial.println(F("WRN: CHANNEL_NONE SELECTED"));} //Warn but send it to AD9959
 
   //Handle phase:
   arg = sCmd.next();                          // Get p from the SerialCommand object buffer
@@ -402,7 +402,7 @@ int setF(){
   //Handle channel: 
   ch = inputChannel();      //Get channel from buffer
   if (ch==-1) return -1;    //If failed, return -1
-  if (ch== 5) {Serial.println("WRN: CHANNEL_NONE SELECTED");} //Warn but send it to AD9959
+  if (ch== 5) {Serial.println(F("WRN: CHANNEL_NONE SELECTED"));} //Warn but send it to AD9959
 
   //Handle frequency:
   arg = sCmd.next();                          // Get p from the SerialCommand object buffer
@@ -434,7 +434,7 @@ int getV(){
   //Handle channel: 
   ch = inputChannel();      //Get channel from buffer
   if (ch==-1) return -1;    //If failed, return -1
-  if (ch== 5) {Serial.println("WRN: CHANNEL_NONE SELECTED");} //Warn but send it to AD9959
+  if (ch== 5) {Serial.println(F("WRN: CHANNEL_NONE SELECTED"));} //Warn but send it to AD9959
   
   dds.setChannels(ch_addr[ch]);
   uint32_t response = dds.read(MyAD9959::ACR);
@@ -450,7 +450,7 @@ int getP(){
   //Handle channel: 
   ch = inputChannel();      //Get channel from buffer
   if (ch==-1) return -1;    //If failed, return -1
-  if (ch== 5) {Serial.println("WRN: CHANNEL_NONE SELECTED");} //Warn but send it to AD9959
+  if (ch== 5) {Serial.println(F("WRN: CHANNEL_NONE SELECTED"));} //Warn but send it to AD9959
   
   dds.setChannels(ch_addr[ch]);
   uint32_t response = dds.read(MyAD9959::CPOW);
@@ -466,7 +466,7 @@ int getF(){
   //Handle channel: 
   ch = inputChannel();      //Get channel from buffer
   if (ch==-1) return -1;    //If failed, return -1
-  if (ch== 5) {Serial.println("WRN: CHANNEL_NONE SELECTED");} //Warn but send it to AD9959
+  if (ch== 5) {Serial.println(F("WRN: CHANNEL_NONE SELECTED"));} //Warn but send it to AD9959
   
   dds.setChannels(ch_addr[ch]);
   uint32_t response = dds.read(MyAD9959::CFTW);
@@ -482,7 +482,7 @@ int mesV(){
   //Handle channel: 
   ch = inputChannel();      //Get channel from buffer
   if (ch==-1) return -1;    //If failed, return -1
-  if (ch== 5) {Serial.println("WRN: CHANNEL_NONE SELECTED");return 0;} //Warn and return 0. Nothing to do.
+  if (ch== 5) {Serial.println(F("WRN: CHANNEL_NONE SELECTED"));return 0;} //Warn and return 0. Nothing to do.
   
   //Send to worker:
   if (ch==4){ //ch==4 means do all valid channels.
@@ -642,15 +642,6 @@ void PID(){
       needs_update = true;
     }
   }
-  /*
-  if((int)cv0!=0){
-    dds.setAmplitude(MyAD9959::Channel0,setPoint0);  //set CH0 amplitude
-    needs_update = true;
-  }
-  if((int)cv1!=0){
-    dds.setAmplitude(MyAD9959::Channel1,setPoint1);  //set CH1 amplitude
-    needs_update = true;
-  }*/
   //Apply phase control to ch1:
   if((int)cv2!=0){
     dds.setPhase(MyAD9959::Channel1,phasePoint);     //control phase via CH1
@@ -663,8 +654,6 @@ void PID(){
   }
 
   //Store values for next control cycle
-  //old_er0 = er0; //now done in earlier loop
-  //old_er1 = er1; //now done in earlier loop
   old_er2 = er2;
   old_cv2 = cv2;
 }
@@ -692,23 +681,22 @@ void debugMessage(){ //to be edited as needed for debugging
   Serial.println(matched);
   Serial.println(F(" "));
 }
-
-void checkMatch(){
-  bool matched_0 = false;
-  bool matched_1 = false;
-  bool matched_phase = false;
+bool checkMatch(){
   bool matched_before = matched; //So we can know whether to reset matchTime
-  matched = false; //This one global so we can check outside
-  if(fabs(v[0]-Vtgt[0])<=Vtol[0] || (Vtgt[0]==0&&Vsetpoint[0]==0)) matched_0 = true;
-  if(fabs(v[1]-Vtgt[1])<=Vtol[1] || (Vtgt[1]==0&&Vsetpoint[1]==0)) matched_1 = true;
-  if(fabs(v2-target2)<=m2 || (Vtgt[0]==0&&Vsetpoint[0]==0) || (Vtgt[1]==0&&Vsetpoint[1]==0)) matched_phase = true;
-  //if either channel is set to 0, then comparing phase doesn't make sense
+  matched = true; //This is the global variable for use elsewhere
 
-  //We're matched if all conditions are met:
-  if(matched_0 && matched_1 && matched_phase) matched = true;
+  //Check voltages okay:
+  for(int i = 0; i<num_ch; i++){ //For each PID-active channel,
+    if((Vtgt[0]!=0||Vsetpoint[0]!=0) && fabs(v[0]-Vtgt[0])>Vtol[0]) matched = false;
+    // Target and setpoint not both 0 && v_measured outside of tolorance 
+  }
+  //Check phase okay:
+  if(fabs(v2-target2)>m2 && (Vtgt[0]!=0||Vsetpoint[0]!=0) && (Vtgt[1]!=0||Vsetpoint[1]!=0)) matched = false;
+  //8302 phase outside target && neither channel is set to 0
 
   //If we were not matched before, but we are now, reset matchTime to right now:
   if(matched && !matched_before) matchTime=millis();
+  return matched;
 }
 //END MAIN LOOP METHODS
 //-----------------------------------------------------------------
