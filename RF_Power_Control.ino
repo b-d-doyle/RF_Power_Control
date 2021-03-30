@@ -57,8 +57,10 @@ class MyAD9959 : public AD9959<
   25000000  //25MHz crystal (optional)
 > {};
 MyAD9959 dds;
-int active_channels[] = {0,1}; //Which channels we care about (may contain any or all of 0->3, but only once each please!
-int num_ch = sizeof active_channels/sizeof active_channels[0];
+//int active_channels[] = {0,1}; //Which channels we care about (may contain any or all of 0->3, but only once each please!
+//int num_ch = sizeof active_channels/sizeof active_channels[0];
+int* active_channels = new int[2]{0,1};
+int num_ch = 2;
 int ch_addr[6] = {0x10,0x20,0x40,0x80,0xF0,0x00};
                //{CH0 ,CH1 ,CH2 ,CH3 ,ALL ,NONE};
 //--------------------
@@ -85,32 +87,6 @@ unsigned long avg_sum_2   = 0;
 
 //PID voltage stuff
 //--------------------
-/*
-int v0        = 0;      //|~V|, current voltage (currently in arbitrary AD8307 units)
-int v1        = 0;
-int target0   = 0.0;    //|~V|, the target voltage (currently in arbitrary AD8307 units)
-int target1   = 0.0;
-float er0     = 0.0;    //|~V|, "error," targetV - currentV
-float er1     = 0.0;
-float i0      = 0.0;    //|~V|, time integral of error
-float i1      = 0.0;
-float old_er0 = 0.0;    //|~V|, last step's error
-float old_er1 = 0.0;
-float d_er0   = 0.0;    //|~V/step|, "delta error," change in error from last step
-float d_er1   = 0.0;
-float kp0     = 1.0;    //empirical factor controlling how much to react to er
-float kp1     = 1.0;
-float ki0     = 0.1;    //empirical factor controlling how much to react to integral of er
-float ki1     = 0.1;
-float kd0     =-0.2;    //empirical factor controlling how much to react to d_er
-float kd1     =-0.2;    //For the moment, let's set it to zero and not use dv/dt at all.
-float cv0     = 0.0;    //"control variable," the value by which we change our ad9959 amplitude
-float cv1     = 0.0;
-int setPoint0 = 0;      //What to tell the AD9959 to set the amplitude to
-int setPoint1 = 0;
-float m0      = 2.0;    //The tolerance; how close do we have to be to be considered matched?
-float m1      = 2.0;
-*/
 int v[4]         = {0};      //|~V|, current voltage (currently in arbitrary AD8307 units)
 int Vtgt[4]      = {0};    //|~V|, the target voltage (currently in arbitrary AD8307 units)
 float Ver[4]     = {0};    //|~V|, "error," targetV - currentV
@@ -197,12 +173,7 @@ void helpMessage(){
 
 void(* reset) (void) = 0; //Resets the arduino, as if with reset button.
 
-void clearInputs(){
-  //TODO? Maybe not needed anymore...
-}
-
 void badCommand(){
-  clearInputs();
   Serial.println(F("ERR"));
 }
 
@@ -215,17 +186,80 @@ int inputChannel(){
   char* arg;
   arg = sCmd.next();   // Get ch from the SerialCommand object buffer
   if (arg == NULL) {   // If no input for ch, return -1
-    badCommand();
-    Serial.println(F("Expected channel number input"));
+    //badCommand(); //It might not be a bad command! The function should decide that!
+    //Serial.println(F("Expected channel number input"));
     return -1;
   }                    // Otherwise, continue
   ch = atoi(arg);
   if (ch<0 || ch>5){  // If ch out of range of valid channel numbers, return -1
     badCommand();
     Serial.println(F("Channel number input out of valid range (0->4)"));
-    return -1;
+    return -2;
   }
   return ch;
+}
+
+int setActiveChannels(){
+  //Bring in first channel to make sure it's okay:
+  int ch = inputChannel();
+  if(ch==-1){Serial.println("Expected at least one channel number."); return -1;}
+  if(ch==-2){Serial.println("First channel number invalid."); return -2;}
+  if(ch==5){Serial.println("Channel 5 will mean NONE, but that's not implemented for PID control. Sorry.");return -2;}
+  if(ch==4 ){ //ch4 means ALL
+    delete[] active_channels;
+    active_channels = new int[4]{0,1,2,3};
+    num_ch = 4;
+    return 0;
+  }
+  
+  //Save old info in case of bad input:
+  int* old_chs = active_channels;
+  int old_num = num_ch;
+  int* temp=NULL; //Needed for channel input loop. It's a pain.
+  
+  //Prepare for new info:
+  num_ch = 0;
+  
+  //Handle channels:
+  while(ch != -1){
+    //Check that channel is valid:
+    if(ch==-2||ch==4||ch==5){ //If channel number is invalid, revert to old info and make fun of user.
+      Serial.println("Bad channel list. Reverting to old list");
+      if(active_channels != old_chs) delete[] active_channels; //We shouldn't even get here if it's old_chs, but still.
+      active_channels=old_chs;
+      num_ch = old_num;
+      return -1;
+    }
+    
+    //Increase number of channels:
+    num_ch++;
+    
+    //I hate arrays:
+    temp = active_channels;             //temp holds old address
+    active_channels = new int[num_ch];  //go get a new, bigger address
+    for(int i=0;i<(num_ch-1);i++){      //copy from old address to new address
+      active_channels[i]=temp[i];
+    }
+    active_channels[num_ch-1]=ch;       //assign last digit of new address
+    if(temp!=old_chs) delete[] temp;    //free temp (unless temp is also old_chs)
+    
+    //Bring in next value:
+    ch = inputChannel();
+  }
+  
+  //Free memory:
+  delete[] old_chs;
+  return 0;
+}
+
+int getActiveChannels(){
+  Serial.print("CHs:  ");
+  for(int i = 0; i<num_ch; i++){
+    if(i>0)Serial.print(',');
+    Serial.print(active_channels[i]);
+  }
+  Serial.print('\n');
+  return 0;
 }
 
 //setVtarget
@@ -404,6 +438,7 @@ int getV(){
   
   dds.setChannels(ch_addr[ch]);
   uint32_t response = dds.read(MyAD9959::ACR);
+  Serial.println(response);
   return response;
 }
 //getP
@@ -419,6 +454,7 @@ int getP(){
   
   dds.setChannels(ch_addr[ch]);
   uint32_t response = dds.read(MyAD9959::CPOW);
+  Serial.println(response);
   return response;
 }
 //getF
@@ -434,6 +470,7 @@ int getF(){
   
   dds.setChannels(ch_addr[ch]);
   uint32_t response = dds.read(MyAD9959::CFTW);
+  Serial.println(response);
   return response;
 }
 
@@ -469,34 +506,35 @@ int mesP(){
 }
 
 //getMatch
-int getMatch(){
-  if(matched && millis()-matchTime >= 500) Serial.println(F("true"));
+bool getMatch(){
+  bool matched_and_stable = false;
+  if(matched && millis()-matchTime >= 500) {matched_and_stable=true; Serial.println(F("true"));}
   else Serial.println(F("false"));
-  return 0;
+  return matched_and_stable;
 }
 
 //pause
 int pauseOn(){
   pause = true;
-  Serial.println(F("ok"));
+  Serial.println(F("paused"));
   return 0;
 }
 //resume
 int pauseOff(){
   pause = false;
-  Serial.println(F("ok"));
+  Serial.println(F("resuming"));
   return 0;
 }
 //debugOn
 int debugOn(){
   debug = true;
-  Serial.println(F("ok"));
+  Serial.println(F("debug on"));
   return 0;
 }
 //debugOff
 int debugOff(){
   debug = false;
-  Serial.println(F("ok"));
+  Serial.println(F("debug off"));
   return 0;
 }
 //outputOn
@@ -552,27 +590,7 @@ void handleAnalogInputs(){
 }
 
 void PID(){
-  //PD controller for voltage
-  /*
-  er0 = target0 - v0;            //How far from target?
-  er1 = target1 - v1;
-  d_er0 = er0 - old_er0;         //How fast approaching/leaving target?
-  d_er1 = er1 - old_er1;
-  if(abs(er0)<5.0 && abs(er0)!=0.0) i0+=er0;      //We only use the integral part if we're pretty close to the value we want
-  else i0=0;
-  if(abs(er1)<5.0 && abs(er0)!=0.0) i1+=er1;
-  else i1=0;
-  cv0 = (kp0*er0) + (ki0*i0) + (kd0*d_er0); //Control variable proportional to er and d_er
-  cv1 = (kp1*er1) + (ki1*i1) + (kd1*d_er1);
-
-  if((setPoint0+(int)cv0)>1023) setPoint0=1023; //max
-  else if((setPoint0+(int)cv0)<0) setPoint0=0;  //min
-  else setPoint0+=(int)cv0;
-  
-  if((setPoint1+(int)cv1)>1023) setPoint1=1023; //max
-  else if((setPoint1+(int)cv1)<0) setPoint1=0;  //min
-  else setPoint1+=(int)cv1;
-  */
+  //PID controller for voltage
   for(int i = 0; i<num_ch; i++){
     int ch = active_channels[i];
     Ver[ch] = Vtgt[ch] - v[ch];          //How far from target?
@@ -716,6 +734,8 @@ void setup() {
   sCmd.addCommand("reset",      reset);       //reset              //Resets the Arduino, as if with the reset button.
 
   //PID commands:
+  sCmd.addCommand("setActiveChannels", setActiveChannels); //setActiveChannels {ch,ch..} //Set which channels are active for PID control.
+  sCmd.addCommand("getActiveChannels", getActiveChannels); //getActiveChannels           //Returns which channels are active.
   sCmd.addCommand("setVtarget", setVtarget);  //setVtarget ch v    //channel voltage setpoint
   sCmd.addCommand("getVtarget", getVtarget);  //getVtarget ch      //channel voltage setpoint
   sCmd.addCommand("setVT",      setVtarget);  //setVT      ch v    //Alias for above
