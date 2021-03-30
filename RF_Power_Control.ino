@@ -57,12 +57,10 @@ class MyAD9959 : public AD9959<
   25000000  //25MHz crystal (optional)
 > {};
 MyAD9959 dds;
-//int active_channels[] = {0,1}; //Which channels we care about (may contain any or all of 0->3, but only once each please!
-//int num_ch = sizeof active_channels/sizeof active_channels[0];
-int* active_channels = new int[2]{0,1};
-int num_ch = 2;
-int ch_addr[6] = {0x10,0x20,0x40,0x80,0xF0,0x00};
-               //{CH0 ,CH1 ,CH2 ,CH3 ,ALL ,NONE};
+int* PID_chs = new int[2]{0,1};
+int  num_chs = 2;
+int  ch_addr[6] = {0x10,0x20,0x40,0x80,0xF0,0x00};
+                //{CH0 ,CH1 ,CH2 ,CH3 ,ALL ,NONE};
 //--------------------
 
 //AD830X stuff
@@ -87,23 +85,22 @@ unsigned long avg_sum_2   = 0;
 
 //PID voltage stuff
 //--------------------
-int v[4]         = {0};      //|~V|, current voltage (currently in arbitrary AD8307 units)
-int Vtgt[4]      = {0};    //|~V|, the target voltage (currently in arbitrary AD8307 units)
-float Ver[4]     = {0};    //|~V|, "error," targetV - currentV
-float Vi[4]      = {0};    //|~V|, time integral of error
-float old_Ver[4] = {0};    //|~V|, last step's error
-float d_Ver[4]   = {0};    //|~V/step|, "delta error," change in error from last step
-float Vkp[4]     = {1.0,1.0,1.0,1.0};    //empirical factor controlling how much to react to er
-float Vki[4]     = {0.1,0.1,0.1,0.1};    //empirical factor controlling how much to react to integral of er
+int v[4]         = {0};                      //|~V|, current voltage (currently in arbitrary AD8307 units)
+int Vtgt[4]      = {0};                      //|~V|, the target voltage (currently in arbitrary AD8307 units)
+float Ver[4]     = {0};                      //|~V|, "error," targetV - currentV
+float int_Ver[4] = {0};                      //|~V|, time integral of error
+float d_Ver[4]   = {0};                      //|~V/step|, "delta error," change in error from last step
+float old_Ver[4] = {0};                      //|~V|, last step's error
+float Vkp[4]     = {1.0,1.0,1.0,1.0};        //empirical factor controlling how much to react to er
+float Vki[4]     = {0.1,0.1,0.1,0.1};        //empirical factor controlling how much to react to integral of er
 float Vkd[4]     = {-0.2,-0.2,-0.2,-0.2};    //empirical factor controlling how much to react to d_er
-float Vcv[4]     = {0};    //"control variable," the value by which we change our ad9959 amplitude
-int Vsetpoint[4] = {0};      //What to tell the AD9959 to set the amplitude to
-float Vtol[4]    = {2.0,2.0,2.0,2.0};    //The tolerance; how close do we have to be to be considered matched?
+float Vcv[4]     = {0};                      //"control variable," the value by which we change our ad9959 amplitude
+int Vsetpoint[4] = {0};                      //What to tell the AD9959 to set the amplitude to
+float Vtol[4]    = {2.0,2.0,2.0,2.0};        //The tolerance; how close do we have to be to be considered matched?
 //--------------------
 
 //PID phase stuff
 //--------------------
-bool  reset_adaptation = true;
 bool  neg        = false;
 int   v2         = 0;
 float target2    = (float)min_phase;
@@ -202,63 +199,121 @@ int inputChannel(){
 int setActiveChannels(){
   //Bring in first channel to make sure it's okay:
   int ch = inputChannel();
-  if(ch==-1){Serial.println(F("Expected at least one channel number.")); return -1;}
-  if(ch==-2){Serial.println(F("First channel number invalid.")); return -2;}
-  if(ch==5){Serial.println(F("Channel 5 will mean NONE, but that's not implemented for PID control. Sorry."));return -2;}
+  if(ch==-1){badCommand();Serial.println(F("Expected at least one channel number.")); getActiveChannels(); return -1;}
+  if(ch==-2){Serial.println(F("First channel number invalid.")); getActiveChannels(); return -2;}
+  if(ch==5){Serial.println(F("CHANNEL NONE not implemented for PID control (yet?). Use pause command.")); getActiveChannels(); return -2;}
   if(ch==4 ){ //ch4 means ALL
-    delete[] active_channels;
-    active_channels = new int[4]{0,1,2,3};
-    num_ch = 4;
+    delete[] PID_chs;
+    PID_chs = new int[4]{0,1,2,3};
+    num_chs = 4;
+    getActiveChannels();
     return 0;
   }
   
   //Save old info in case of bad input:
-  int* old_chs = active_channels;
-  int old_num = num_ch;
-  int* temp=NULL; //Needed for channel input loop. It's a pain.
+  int* old_chs = PID_chs;
+  int old_num = num_chs;
   
   //Prepare for new info:
-  num_ch = 0;
+  int* temp=NULL; //Needed for channel input loop.
+  num_chs = 0;
   
   //Handle channels:
   while(ch != -1){
     //Check that channel is valid:
     if(ch==-2||ch==4||ch==5){ //If channel number is invalid, revert to old info and make fun of user.
       Serial.println(F("Bad channel list. Reverting to old list"));
-      if(active_channels != old_chs) delete[] active_channels; //We shouldn't even get here if it's old_chs, but still.
-      active_channels=old_chs;
-      num_ch = old_num;
+      if(PID_chs != old_chs) delete[] PID_chs; //We shouldn't even get here if PID_chs==old_chs, but better to be sure.
+      PID_chs=old_chs;
+      num_chs = old_num;
       return -1;
     }
     
     //Increase number of channels:
-    num_ch++;
+    num_chs++;
     
     //I hate arrays:
-    temp = active_channels;             //temp holds old address
-    active_channels = new int[num_ch];  //go get a new, bigger address
-    for(int i=0;i<(num_ch-1);i++){      //copy from old address to new address
-      active_channels[i]=temp[i];
+    temp = PID_chs;                      //temp holds old address
+    PID_chs = new int[num_chs];          //go get a new, bigger address
+    for(int i=0;i<(num_chs-1);i++){      //copy from old address to new address
+      PID_chs[i]=temp[i];
     }
-    active_channels[num_ch-1]=ch;       //assign last digit of new address
-    if(temp!=old_chs) delete[] temp;    //free temp (unless temp is also old_chs)
+    PID_chs[num_chs-1]=ch;               //assign last digit of new address
+    if(temp!=old_chs) delete[] temp;     //free temp (unless temp is also old_chs)
     
     //Bring in next value:
     ch = inputChannel();
-  }
+  }//This method is inefficient for long lists of channels from the user, but we're expecting 1 to 4 channels.
   
   //Free memory:
   delete[] old_chs;
+
+  //Clean up PID_chs (sort & remove duplicates):
+  clean_array(&PID_chs,&num_chs);
+
+  //Report to user:
+  getActiveChannels();
+  
   return 0;
 }
 
 int getActiveChannels(){
   Serial.print(F("CHs:  "));
-  for(int i = 0; i<num_ch; i++){
+  for(int i = 0; i<num_chs; i++){
     if(i>0)Serial.print(',');
-    Serial.print(active_channels[i]);
+    Serial.print(PID_chs[i]);
   }
   Serial.print('\n');
+  return 0;
+}
+
+//Array stuff for handling PID_chs:
+//clean_array()
+int clean_array(int* arr_ptr[], int* len_ptr){
+  //Calls sort_array(), then removes any duplicates, and resizes if necessary.
+
+  //For legibility, let's dereference one layer:
+  int* arr = *arr_ptr;
+  int  len = *len_ptr;
+
+  //Sort the array:
+  sort_array(arr,len);
+  
+  //Collapse any duplicates in arr. If there *are* duplicates, we'll have to resize below.
+  int i=1; //counts through the whole arr[]
+  int j=0; //counts through only unique values of arr[]
+  for(i=1; i<len; i++){
+    if(arr[j]!=arr[i]){ //If not duplicate,
+      arr[++j]=arr[i];  //Increment j, then store value.
+    }
+  }
+  
+  //If we had some duplicates, then resize the array:
+  if(len != j+1){
+    *len_ptr = j+1;            //Store new len
+    int* temp = arr;
+    *arr_ptr = new int[*len_ptr];
+    for(i=0; i<*len_ptr; i++){ //Copy from temp to (*arr_ptr)[]
+      (*arr_ptr)[i] = temp[i];
+    }
+    delete[] temp;             //Free memory
+  }
+  return 0;
+}
+
+//sort_array()
+int sort_array(int arr[],int len){
+  //to be used on PID_chs, which is really short. Let's just do an insertion sort.
+  int i,j,number;
+  for(i=1; i<len; i++){           //Loop forwards through arr[]
+    number = arr[i];              //The number we're trying to insert.
+    j=i-1;
+    while(j>=0 && number<arr[j]){ //Loop backwards from arr[i] until we find where to insert the number
+      arr[j+1] = arr[j];          //Shift rightwards, making room to insert the number (and overwriting where it USED to be)
+      j--;
+    }
+    arr[j+1] = number;            //Insert the number
+  }
   return 0;
 }
 
@@ -286,7 +341,7 @@ int setVtarget(){
   
   //Send to worker:
   if (ch==4){ //ch==4 means do all valid channels.
-    for(int i=0;i<num_ch;i++) setVtarget_worker(active_channels[i],v);
+    for(int i=0;i<num_chs;i++) setVtarget_worker(PID_chs[i],v);
     return 0;
   }
   return setVtarget_worker(ch,v);
@@ -311,7 +366,7 @@ int getVtarget(){
 
   //Send to worker:
   if (ch==4){ //ch==4 means do all valid channels.
-    for(int i=0;i<num_ch;i++) getVtarget_worker(active_channels[i]);
+    for(int i=0;i<num_chs;i++) getVtarget_worker(PID_chs[i]);
     return 0;
   }
   return getVtarget_worker(ch); //should handle ch=4 or invalid ch here!
@@ -387,7 +442,7 @@ int setP(){
   //Send to AD9959:
   dds.setPhase(ch_addr[ch],(int)(p*16384/360));//Send to AD9959
   dds.update();                                //Tell AD9959 to do it
-  //reset_adaptation = true;                   //Flag that we need to restart on phase PID
+  //PID_phase_reset();               //Restart on PID phase target adaptation
   Serial.println(F("ok"));
   return 0;
 }
@@ -407,7 +462,7 @@ int setF(){
   //Handle frequency:
   arg = sCmd.next();                          // Get p from the SerialCommand object buffer
   if (arg == NULL) {badCommand();return 1;}   // If no input, return 1
-  f = atof(arg);                          // Convert to int
+  f = atof(arg);                              // Convert to int
 
   //Check value in range:
   //todo
@@ -420,7 +475,7 @@ int setF(){
   //Send to AD9959:
   dds.setFrequency(ch_addr[ch],f);       //Send to AD9959
   dds.update();                          //Tell AD9959 to do it
-  //reset_adaptation = true;             //Flag that we need to restart on phase PID
+  //PID_phase_resetAdaptation();         //Restart on PID phase target adaptation
   Serial.println(F("ok"));
   return 0;
 }
@@ -486,7 +541,7 @@ int mesV(){
   
   //Send to worker:
   if (ch==4){ //ch==4 means do all valid channels.
-    for(int i=0;i<num_ch;i++) mesV_worker(active_channels[i]);
+    for(int i=0;i<num_chs;i++) mesV_worker(PID_chs[i]);
     return 0;
   }
   return mesV_worker(ch);
@@ -572,8 +627,6 @@ void handleAnalogInputs(){
     avg_sum_2 += (unsigned long) analog_rf_in_2;
     //avg_sum_3 += (unsigned long) analog_rf_in_3;
   }
-  //v0 = avg_sum_0>>avg_sum_shift; //old way
-  //v1 = avg_sum_1>>avg_sum_shift; //old way
   v[0] = avg_sum_0>>avg_sum_shift; //Voltage ch 0
   v[1] = avg_sum_1>>avg_sum_shift; //Voltage ch 1
   v2 = avg_sum_2>>avg_sum_shift;   //Phase ch 0 vs ch 1
@@ -590,72 +643,91 @@ void handleAnalogInputs(){
 }
 
 void PID(){
+  bool needs_update = false; //If nothing changes, no need to update at the end.
+
   //PID controller for voltage
-  for(int i = 0; i<num_ch; i++){
-    int ch = active_channels[i];
-    Ver[ch] = Vtgt[ch] - v[ch];          //How far from target?
-    d_Ver[ch] = Ver[ch] - old_Ver[ch];   //How fast approaching/leaving target?
-    if(abs(Ver[ch])<5.0 && abs(Ver[ch])!=0.0) Vi[ch]+=Ver[ch];      //We only use the integral part if we're pretty close to the value we want
-    else Vi[ch]=0;
-    Vcv[ch] = (Vkp[ch]*Ver[ch]) + (Vki[ch]*Vi[ch]) + (Vkd[ch]*d_Ver[ch]); //Control variable proportional to er and d_er
-  
-    if((Vsetpoint[ch]+(int)Vcv[ch])>1023) Vsetpoint[ch]=1023; //max
-    else if((Vsetpoint[ch]+(int)Vcv[ch])<0) Vsetpoint[ch]=0;  //min
-    else Vsetpoint[ch]+=(int)Vcv[ch];
-    old_Ver[ch] = Ver[ch];
+  for(int i = 0; i<num_chs; i++){
+    int ch = PID_chs[i];
+    if(PID_voltage(ch)) needs_update=true; //PID_voltage() returns true if it wants to update dds
   }
   
   //PID controller for phase
-  if(reset_adaptation){
-    target2=(float)min_phase;
-    running_sum_2=v2*16;
-    for(int i=0;i<16;i++) log2[i]=v2;
-    phasePoint = 8192;
-    reset_adaptation = false;
-  }
-  else{
-    if(v2 < target2) target2 = v2;
-    target2 = (((running_sum_2+8) >> 4 ) - 1 - target2)*0.5 + target2;
-    //if((target2-5.0)*16>running_sum_2) target2 = (running_sum_2+8)/16 - 5.0;
-    //target2 = (running_sum_2+8)/16 - 5.0;
-  }
-  er2 = v2 - target2;
-  if((abs(er2)-abs(old_er2))!=0.0){    //Which side of the minimum are we on?
-    if (old_cv2*(abs(er2)-abs(old_er2))>0.0) neg=true;
-    else neg=false;
-  }
-  if(neg) er2 *=-1.0; //If we're on the left side of the minimum, er2 is negative
-  d_er2 = er2 - old_er2;
-  if(abs(er2)<(target2+10) && abs(er2)>(target2+1)) i2 += er2;
-  else i2 = 0.0;
-  cv2 = (kp2*er2) + (ki2*i2) + (kd2*d_er2);
-
-  phasePoint = (phasePoint+(int)cv2) & 0x3fff;
-
-  //Now apply it all
-  bool needs_update = false;
-  //Apply voltage control to each channel:
-  for(int i = 0; i<num_ch; i++){
-    int ch = active_channels[i];
-    if((int)Vcv[ch]!=0){
-      dds.setAmplitude(static_cast<MyAD9959::ChannelNum>(ch+1),Vsetpoint[ch]);  //set ch amplitude
-      needs_update = true;
-    }
-  }
-  //Apply phase control to ch1:
-  if((int)cv2!=0){
-    dds.setPhase(MyAD9959::Channel1,phasePoint);     //control phase via CH1
-    needs_update = true;
-  }
+  if(PID_phase()) needs_update=true;       //PID_phase() returns true if it wants to update dds
+  
   //Now ask AD9959 to do it (if we changed anything)
   if(needs_update){
     dds.update();
-    needs_update = false;
   }
+}
 
-  //Store values for next control cycle
-  old_er2 = er2;
-  old_cv2 = cv2;
+bool PID_voltage(int ch){
+  //The PID control variable is a linear combination of ERROR, (d ERROR)/dt, and sometimes int(ERROR dt)
+  //Find the three parts of the control variable:
+  Ver[ch]     = Vtgt[ch] - v[ch];                                       //ERROR:         How far from target?
+  d_Ver[ch]   = Ver[ch]  - old_Ver[ch];                                 //(d ERROR)/dt:  How fast approaching/leaving target?
+  if( abs(Ver[ch])<5.0 && abs(Ver[ch])!=0.0 ) int_Ver[ch]+=Ver[ch];     //int(ERROR dt): How long have we been off by how much? (Only used if pretty close)
+  else int_Ver[ch]=0;                                                   //               If we're far away or right on it, set to 0.
+  old_Ver[ch] = Ver[ch];                                                //Save old ERROR for next loop.
+  
+  //Make control variable using empirical control factors:
+  Vcv[ch] = (    Ver[ch]*Vkp[ch])  // proportional * k_proportional
+          + (int_Ver[ch]*Vki[ch])  // integral     * k_integral
+          + (  d_Ver[ch]*Vkd[ch]); // derivative   * k_derivative
+
+  //If control variable isn't zero, apply it:
+  bool request_update = false;
+  if((int)Vcv[ch]!=0){
+    Vsetpoint[ch]+=(int)Vcv[ch];                                              //Update setpoint.
+    if(Vsetpoint[ch]>1024) Vsetpoint[ch]=1024;                                //check for max
+    if(Vsetpoint[ch]<0   ) Vsetpoint[ch]=0;                                   //check for min
+    dds.setAmplitude(static_cast<MyAD9959::ChannelNum>(ch+1),Vsetpoint[ch]);  //Send ch amplitude to AD9959
+    request_update = true;                                                    //We'll update all channels at once.
+  }
+  return request_update;
+}
+
+//TODO: generalize to PID_phase(int chA, int chB)
+bool PID_phase(){
+  //The target we're looking for is noisey and can drift. (ugh). Have to do this phase target adaptation:
+  if(v2 < target2) target2 = v2;                             //target2 slowly rises till we find a v2 below it (or something calls PID_phase_resetAdaptation()
+  target2 += (((running_sum_2+8) >> 4 ) - 1 - target2)*0.5;
+
+  
+  //The PID control variable is a linear combination of ERROR, (d ERROR)/dt, and sometimes int(ERROR dt)
+  //Find the three parts of the control variable:
+  er2 = v2 - target2;                                           //ERROR:         How far from target?
+  if((abs(er2)-abs(old_er2))!=0.0){                             //               But should we consider it positive or negative?
+    if (old_cv2*(abs(er2)-abs(old_er2))>0.0) neg=true;          //               v2 (from AD8302) is always a positive value, but we need to know which way to go!
+    else neg=false;                                             //
+  }                                                             //
+  if(neg) er2 *=-1.0;                                           //               If we're on the left side of the minimum, er2 is negative
+  d_er2 = er2 - old_er2;                                        //(d ERROR)/dt:  How fast approaching/leaving target?
+  if(abs(er2)<10 && abs(er2)>1) i2 += er2;                      //int(ERROR dt): How long have we been off by how much? (Only used if pretty close)
+  else i2 = 0.0;                                                //               If we're far away or right on it, set to 0.
+  old_er2 = er2;                                                //Save old ERROR for next loop.
+  
+  //Make control variable using empirical control factors:
+  cv2 = (  er2*kp2)  // proportional * k_proportional
+      + (   i2*ki2)  // integral     * k_integral
+      + (d_er2*kd2); // derivative   * k_derivative
+  old_cv2 = cv2;     // Save cv2 for next cycle (to determing which side of voltage minimum we're on)
+  
+  //Apply phase control to ch1:
+  bool request_update=false;
+  if((int)cv2!=0){
+    phasePoint = (phasePoint+(int)cv2) & 0x3fff;     //What to send to AD9959
+    dds.setPhase(MyAD9959::Channel1,phasePoint);     //Send it to AD9959
+    request_update = true;
+  }
+  return request_update;
+}
+
+int PID_phase_reset(){
+  //Resets the adaptive phase target
+  target2=(float)min_phase;
+  running_sum_2=v2*16;
+  for(int i=0;i<16;i++) log2[i]=v2;
+  phasePoint = 8192; //180 degrees
 }
 
 void debugMessage(){ //to be edited as needed for debugging
@@ -681,13 +753,14 @@ void debugMessage(){ //to be edited as needed for debugging
   Serial.println(matched);
   Serial.println(F(" "));
 }
+
 bool checkMatch(){
   bool matched_before = matched; //So we can know whether to reset matchTime
   matched = true; //This is the global variable for use elsewhere
 
   //Check voltages okay:
-  for(int i = 0; i<num_ch; i++){ //For each PID-active channel,
-    int ch = active_channels[i];
+  for(int i = 0; i<num_chs; i++){ //For each PID-active channel,
+    int ch = PID_chs[i];
     if(checkVoltageMatch(ch)==false) matched = false;
   }
   //Check phase okay:
@@ -698,7 +771,7 @@ bool checkMatch(){
   if(matched && !matched_before) matchTime=millis();
   return matched;
 }
-bool checkVoltageMatch(int ch){
+bool checkVoltageMatch(int ch){ //splitting off a single-line statement into its own function was a dumb idea. I should revert.
   return (Vtgt[ch]==0&&Vsetpoint[ch]==0) || fabs(v[ch]-Vtgt[ch])<=Vtol[ch];
   //      Target and setpoint both 0   || measured v within tolorance of target v
 }
@@ -772,8 +845,13 @@ void setup() {
 }
 
 void loop() {
+  //Serial inputs:
   sCmd.readSerial();
+
+  //Analog inputs from AD830x:
   handleAnalogInputs();
+
+  //Maintain target voltages and phases:
   if(!pause) PID();
   checkMatch();
 
