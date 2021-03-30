@@ -183,12 +183,10 @@ int inputChannel(){
   char* arg;
   arg = sCmd.next();   // Get ch from the SerialCommand object buffer
   if (arg == NULL) {   // If no input for ch, return -1
-    //badCommand(); //It might not be a bad command! The function should decide that!
-    //Serial.println(F("Expected channel number input"));
     return -1;
   }                    // Otherwise, continue
   ch = atoi(arg);
-  if (ch<0 || ch>5){  // If ch out of range of valid channel numbers, return -1
+  if (ch<0 || ch>5){  // If ch out of range of valid channel numbers, return -2
     badCommand();
     Serial.println(F("Channel number input out of valid range (0->4)"));
     return -2;
