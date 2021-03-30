@@ -687,8 +687,8 @@ bool checkMatch(){
 
   //Check voltages okay:
   for(int i = 0; i<num_ch; i++){ //For each PID-active channel,
-    if((Vtgt[0]!=0||Vsetpoint[0]!=0) && fabs(v[0]-Vtgt[0])>Vtol[0]) matched = false;
-    // Target and setpoint not both 0 && v_measured outside of tolorance 
+    int ch = active_channels[i];
+    if(checkVoltageMatch(ch)==false) matched = false;
   }
   //Check phase okay:
   if(fabs(v2-target2)>m2 && (Vtgt[0]!=0||Vsetpoint[0]!=0) && (Vtgt[1]!=0||Vsetpoint[1]!=0)) matched = false;
@@ -697,6 +697,13 @@ bool checkMatch(){
   //If we were not matched before, but we are now, reset matchTime to right now:
   if(matched && !matched_before) matchTime=millis();
   return matched;
+}
+bool checkVoltageMatch(int ch){
+  return (Vtgt[ch]==0&&Vsetpoint[ch]==0) || fabs(v[ch]-Vtgt[ch])<=Vtol[ch];
+  //      Target and setpoint both 0   || measured v within tolorance of target v
+}
+bool checkPhaseMatch(int chA, int chB){
+  return true; //todo
 }
 //END MAIN LOOP METHODS
 //-----------------------------------------------------------------
