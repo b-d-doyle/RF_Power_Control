@@ -85,7 +85,7 @@ unsigned long avg_sum_2   = 0;
 
 //PID voltage stuff
 //--------------------
-int v[4]         = {0};                      //|~V|, current voltage (currently in arbitrary AD8307 units)
+int V[4]         = {0};                      //|~V|, current voltage (currently in arbitrary AD8307 units)
 int Vtgt[4]      = {0};                      //|~V|, the target voltage (currently in arbitrary AD8307 units)
 float Ver[4]     = {0};                      //|~V|, "error," targetV - currentV
 float int_Ver[4] = {0};                      //|~V|, time integral of error
@@ -150,22 +150,46 @@ void helpMessage(){
   Serial.println(version_no,2);
   Serial.println(F("PID controller for voltage and relative phase of two channels."));
   Serial.println(F("For use with Brandon's COPLA library, arduino_power version 0.01"));
-  
-  Serial.println(F("\nCommands:"));
-  Serial.println(F("debugOn  -- turns debug mode on"));
-  Serial.println(F("debugOff -- turns debug mode off"));
-  Serial.println(F("pause    -- pauses PID control"));
-  Serial.println(F("resume   -- resumes PID control"));
-  Serial.println(F("setVoltage,[channel],[value]"));
-  Serial.println(F("setFrequency,[channel],[value]"));
-  Serial.println(F("setPhase,[channel],[value]"));
-  Serial.println(F("setDirectVoltage,[channel],[value]"));
-  Serial.println(F("  Note:[channel] may be 0-3 for a"));
-  Serial.println(F("  specific channel, or 4 for all channels"));
-  Serial.println(F("get,[value]"));
-  Serial.println(F("Use 'get,help' for more help on get"));
-  
-  Serial.println(F("\nExcept I changed a bunch of stuff. Need to update this. Sorry!"));
+
+  Serial.println(F("\n ~~~ Commands ~~~"));
+  Serial.println(F("Serial commands and inputs are separated by a space, then terminated with newline."));
+  Serial.println(F("ch input may be 0-3, or 4 (ALL), or sometimes 5 (NONE)."));
+  Serial.println(F("\nGeneral commands:"));
+  Serial.println(F("COMMAND_NAME      | INPUT(S)  | DESCRIPTION"));
+  Serial.println(F("help              |           | Displays help message"));
+  Serial.println(F("debugOn           |           | Debug mode sends periodic info via serial"));
+  Serial.println(F("debugOff          |           | Yep"));
+  Serial.println(F("outputOn          |           | Turns on voltage output.  (Not implemented yet)"));
+  Serial.println(F("outputOff         |           | Turns off voltage output. (Not implemented yet)"));
+  Serial.println(F("reset             |           | Resets the Arduino, as if with the reset button."));
+
+  Serial.println(F("\nPID commands:"));
+  Serial.println(F("COMMAND_NAME      | INPUT(S)  | DESCRIPTION"));
+  Serial.println(F("setActiveChannels | ch ch ... | Set which channels are active for PID control."));
+  Serial.println(F("getActiveChannels |           | Get which channels are active for PID control."));
+  Serial.println(F("setVtarget        | ch v      | Set channel voltage PID target (0-1024)"));
+  Serial.println(F("getVtarget        | ch        | Get channel voltage PID target"));
+  Serial.println(F("setVT             | ch v      | Alias for above"));
+  Serial.println(F("getVT             | ch        | Alias for above"));
+  Serial.println(F("getMatch          |           | Asks if actual output matches targets"));
+  Serial.println(F("pause             |           | Pause PID algorithm for both voltage and phase"));
+  Serial.println(F("resume            |           | Resume PID algorithm"));
+  Serial.println(F("Phase control commands not implemented yet."));
+
+  Serial.println(F("\nDirect AD9959 registry commands:"));
+  Serial.println(F("COMMAND_NAME      | INPUT(S)  | DESCRIPTION"));
+  Serial.println(F("setV              | ch v      |*Set AD9959 channel voltage (0-1024)"));
+  Serial.println(F("setP              | ch p      |*Set AD9959 channel phase   (0-360 )"));
+  Serial.println(F("setF              | ch f      | Set AD9959 channel frequency"));
+  Serial.println(F("getV              | ch        | Ask AD9959 channel voltage"));
+  Serial.println(F("getP              | ch        | Ask AD9959 channel phase"));
+  Serial.println(F("getF              | ch        | Ask AD9959 channel frequency"));
+  Serial.println(F("* PID algorithm will immediately overwrite, unless paused or channel inactive."));
+
+  Serial.println(F("\nVoltage and phase-difference as measured by AD830X:"));
+  Serial.println(F("COMMAND_NAME      | INPUT(S)  | DESCRIPTION"));
+  Serial.println(F("mesV              | ch        | Get Voltage from AD8307"));
+  Serial.println(F("mesP              |           | Get Phase   from AD8302"));
 }
 
 void(* reset) (void) = 0; //Resets the arduino, as if with reset button.
@@ -268,7 +292,7 @@ int getActiveChannels(){
 //Array stuff for handling PID_chs:
 //clean_array()
 int clean_array(int* arr_ptr[], int* len_ptr){
-  //Calls sort_array(), then removes any duplicates, and resizes if necessary.
+  //Calls sort_array(), removes any duplicates, and resizes if necessary.
 
   //For legibility, let's dereference one layer:
   int* arr = *arr_ptr;
@@ -277,31 +301,30 @@ int clean_array(int* arr_ptr[], int* len_ptr){
   //Sort the array:
   sort_array(arr,len);
   
-  //Collapse any duplicates in arr. If there *are* duplicates, we'll have to resize below.
+  //Collapse any duplicates in arr. If there *are* duplicates, we'll resize below.
   int i=1; //counts through the whole arr[]
-  int j=0; //counts through only unique values of arr[]
+  int j=1; //counts through only unique values of arr[]
   for(i=1; i<len; i++){
-    if(arr[j]!=arr[i]){ //If not duplicate,
-      arr[++j]=arr[i];  //Increment j, then store value.
+    if(arr[j-1]!=arr[i]){ //If not duplicate,
+      arr[j++]=arr[i];    //Store value, then increment j.
     }
   }
   
-  //If we had some duplicates, then resize the array:
-  if(len != j+1){
-    *len_ptr = j+1;            //Store new len
-    int* temp = arr;
-    *arr_ptr = new int[*len_ptr];
-    for(i=0; i<*len_ptr; i++){ //Copy from temp to (*arr_ptr)[]
-      (*arr_ptr)[i] = temp[i];
+  //If we had some duplicates, resize:
+  if(len != j){
+    *len_ptr = j;            //Store new len
+    *arr_ptr = new int[j];   //Point arr_ptr to new memory location
+    for(i=0; i<j; i++){      //Fill *arr_ptr from arr, which still points to old array
+      (*arr_ptr)[i] = arr[i];
     }
-    delete[] temp;             //Free memory
+    delete[] arr;            //Free memory
   }
   return 0;
 }
 
 //sort_array()
 int sort_array(int arr[],int len){
-  //to be used on PID_chs, which is really short. Let's just do an insertion sort.
+  //To be used on PID_chs, which will usually be length 4 at most. Let's just do an insertion sort.
   int i,j,number;
   for(i=1; i<len; i++){           //Loop forwards through arr[]
     number = arr[i];              //The number we're trying to insert.
@@ -367,7 +390,7 @@ int getVtarget(){
     for(int i=0;i<num_chs;i++) getVtarget_worker(PID_chs[i]);
     return 0;
   }
-  return getVtarget_worker(ch); //should handle ch=4 or invalid ch here!
+  return getVtarget_worker(ch);
 }
 int getVtarget_worker(int ch){
   char msg[50];
@@ -427,7 +450,7 @@ int setP(){
   //Handle phase:
   arg = sCmd.next();                          // Get p from the SerialCommand object buffer
   if (arg == NULL) {badCommand();return 1;}   // If no input, return 1
-  p = atof(arg);                        // Convert to float
+  p = atof(arg);                              // Convert to float
 
   //Check value in range:
   //todo
@@ -440,7 +463,7 @@ int setP(){
   //Send to AD9959:
   dds.setPhase(ch_addr[ch],(int)(p*16384/360));//Send to AD9959
   dds.update();                                //Tell AD9959 to do it
-  //PID_phase_reset();               //Restart on PID phase target adaptation
+  //PID_phase_reset();                         //Restart PID phase target adaptation
   Serial.println(F("ok"));
   return 0;
 }
@@ -473,7 +496,7 @@ int setF(){
   //Send to AD9959:
   dds.setFrequency(ch_addr[ch],f);       //Send to AD9959
   dds.update();                          //Tell AD9959 to do it
-  //PID_phase_resetAdaptation();         //Restart on PID phase target adaptation
+  //PID_phase_resetAdaptation();         //Restart PID phase target adaptation
   Serial.println(F("ok"));
   return 0;
 }
@@ -546,9 +569,9 @@ int mesV(){
 }
 int mesV_worker(int ch){
   char msg[50];
-  sprintf(msg,"VM%i:  %i",ch,v[ch]);
+  sprintf(msg,"VM%i:  %i",ch,V[ch]);
   Serial.println(msg);
-  return v[ch];
+  return V[ch];
 }
 
 //mesP
@@ -625,8 +648,8 @@ void handleAnalogInputs(){
     avg_sum_2 += (unsigned long) analog_rf_in_2;
     //avg_sum_3 += (unsigned long) analog_rf_in_3;
   }
-  v[0] = avg_sum_0>>avg_sum_shift; //Voltage ch 0
-  v[1] = avg_sum_1>>avg_sum_shift; //Voltage ch 1
+  V[0] = avg_sum_0>>avg_sum_shift; //Voltage ch 0
+  V[1] = avg_sum_1>>avg_sum_shift; //Voltage ch 1
   v2 = avg_sum_2>>avg_sum_shift;   //Phase ch 0 vs ch 1
   //v3 = avg_sum_3>>avg_sum_shift; //Might need to add second AD8302?
 
@@ -661,7 +684,7 @@ void PID(){
 bool PID_voltage(int ch){
   //The PID control variable is a linear combination of ERROR, (d ERROR)/dt, and sometimes int(ERROR dt)
   //Find the three parts of the control variable:
-  Ver[ch]     = Vtgt[ch] - v[ch];                                       //ERROR:         How far from target?
+  Ver[ch]     = Vtgt[ch] - V[ch];                                       //ERROR:         How far from target?
   d_Ver[ch]   = Ver[ch]  - old_Ver[ch];                                 //(d ERROR)/dt:  How fast approaching/leaving target?
   if( abs(Ver[ch])<5.0 && abs(Ver[ch])!=0.0 ) int_Ver[ch]+=Ver[ch];     //int(ERROR dt): How long have we been off by how much? (Only used if pretty close)
   else int_Ver[ch]=0;                                                   //               If we're far away or right on it, set to 0.
@@ -678,7 +701,7 @@ bool PID_voltage(int ch){
     Vsetpoint[ch]+=(int)Vcv[ch];                                              //Update setpoint.
     if(Vsetpoint[ch]>1024) Vsetpoint[ch]=1024;                                //check for max
     if(Vsetpoint[ch]<0   ) Vsetpoint[ch]=0;                                   //check for min
-    dds.setAmplitude(static_cast<MyAD9959::ChannelNum>(ch+1),Vsetpoint[ch]);  //Send ch amplitude to AD9959
+    dds.setAmplitude(ch_addr[ch],Vsetpoint[ch]);                              //Send ch amplitude to AD9959
     request_update = true;                                                    //We'll update all channels at once.
   }
   return request_update;
@@ -714,7 +737,7 @@ bool PID_phase(){
   bool request_update=false;
   if((int)cv2!=0){
     phasePoint = (phasePoint+(int)cv2) & 0x3fff;     //What to send to AD9959
-    dds.setPhase(MyAD9959::Channel1,phasePoint);     //Send it to AD9959
+    dds.setPhase(ch_addr[1],phasePoint);             //Send it to AD9959
     request_update = true;
   }
   return request_update;
@@ -734,9 +757,9 @@ void debugMessage(){ //to be edited as needed for debugging
   Serial.print(F("  "));
   Serial.println(Vtgt[1]);
   Serial.print(F("Measured:  "));
-  Serial.print(v[0]);
+  Serial.print(V[0]);
   Serial.print(F("     "));
-  Serial.println(v[1]);
+  Serial.println(V[1]);
   Serial.print(F("Set:       "));
   Serial.print(Vsetpoint[0]);
   Serial.print(F("    "));
@@ -759,23 +782,19 @@ bool checkMatch(){
   //Check voltages okay:
   for(int i = 0; i<num_chs; i++){ //For each PID-active channel,
     int ch = PID_chs[i];
-    if(checkVoltageMatch(ch)==false) matched = false;
+    if( (Vtgt[ch]!=0||Vsetpoint[ch]!=0) && (fabs(V[ch]-Vtgt[ch])>Vtol[ch]) ) matched = false;
+    //  (Target and setpoint not both 0)&& (measured v outside tolorance )
   }
+  
   //Check phase okay:
   if(fabs(v2-target2)>m2 && (Vtgt[0]!=0||Vsetpoint[0]!=0) && (Vtgt[1]!=0||Vsetpoint[1]!=0)) matched = false;
-  //8302 phase outside target && neither channel is set to 0
+  // (phase outside tolorance) && (neither channel is set to 0)
 
   //If we were not matched before, but we are now, reset matchTime to right now:
   if(matched && !matched_before) matchTime=millis();
   return matched;
 }
-bool checkVoltageMatch(int ch){ //splitting off a single-line statement into its own function was a dumb idea. I should revert.
-  return (Vtgt[ch]==0&&Vsetpoint[ch]==0) || fabs(v[ch]-Vtgt[ch])<=Vtol[ch];
-  //      Target and setpoint both 0   || measured v within tolorance of target v
-}
-bool checkPhaseMatch(int chA, int chB){
-  return true; //todo
-}
+
 //END MAIN LOOP METHODS
 //-----------------------------------------------------------------
 //-----------------------------------------------------------------
