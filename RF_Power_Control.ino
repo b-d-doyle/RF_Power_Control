@@ -7,31 +7,19 @@
  * IMPORTANT: make sure your arduino is running its digital i/o pins at 3.3v!
  * Arduinos are 5v by default, and that is too high for the AD9959
  * 
- * INPUTS:
- * Send an instruction or series of instructions via serial connection
- * 57600 baud, no parity, 8 data bits, 1 stop bit
- * You can send a series of instructions in one line separated by commas.
- * Instructions are probably case sensitive.
+ * Serial commands:
+ * 57600 baud, no parity, 8 data bits, 1 stop bit, commands are NL terminated.
  * 
- * To set channel voltage, phase or frequency:
- * [instruction],[channel],[value],...
- * Example command:
- * setVoltage,0,500,setPhase,0,0,setVoltage,1,500,setPhase,1,180
+ * Use "help" command for list of commands.
  * 
  * The AD9959 has channels 0 to 3. This controller interprets channel 4
- * as being a command to set all channels to the given value.
+ * as being a command to set all channels to the given value. The AD9959
+ * library also has a CHANNEL NONE, which this code sometimes implementes
+ * as channel 5 and sometimes doesn't allow (need to make this consistant).
  * 
- * To pause or unpause:
- * Send "pause" or "resume" command. Example:
- * resume,setVoltage,4,0
- *    -or-
- * setVoltage,4,0,resume
- * Either command would turn control back on (if it were previously paused)
- * and turn off output of all channels (by setting amplitude to zero).
- * 
- * Another use of pause is to manually control output with a serial monitor, 
- * such as the one in the Arduino IDE (ctrl-shift-M). Example:
- * pause,setDirectVoltage,4,1023,setPhase,0,0,setPhase,1,180
+ * Brandon has written a small C++ script to automatically control this and
+ * other RS232 devices using Uwe Konopka's COPLA package (which is in C). But
+ * *this code is intended to also be easy to control manually via serial.
  * 
  */
 
@@ -149,7 +137,8 @@ void helpMessage(){
   Serial.print(F("Version: "));
   Serial.println(version_no,2);
   Serial.println(F("PID controller for voltage and relative phase of two channels."));
-  Serial.println(F("For use with Brandon's COPLA library, arduino_power version 0.01"));
+  Serial.println(F("For use with arduino_power version 0.02,"));
+  Serial.println(F("which is in Brandon's version of Uwe's COPLA library"));
 
   Serial.println(F("\n ~~~ Commands ~~~"));
   Serial.println(F("Serial commands and inputs are separated by a space, then terminated with newline."));
