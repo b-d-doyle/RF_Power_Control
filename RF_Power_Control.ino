@@ -407,7 +407,7 @@ int setV(){
 
   //Check value in range:
   if( v<0 || v>1023){                         // If out of range, return 1
-    Serial.println(F("Value out of bounds. 0->1023"));
+    Serial.println(F("Amplitude value out of bounds. 0->1023"));
     badCommand();
     return 1;
   }                                           // Otherwise, continue
@@ -441,8 +441,12 @@ int setP(){
   if (arg == NULL) {badCommand();return 1;}   // If no input, return 1
   p = atof(arg);                              // Convert to float
 
-  //Check value in range:
-  //todo
+  //Check if in range:
+  if( p<0 || p>360){                        // If out of range, return 1
+    Serial.println(F("Phase value out of bounds. 0->360"));
+    badCommand();
+    return 1;
+  }
   
   //Report to user:
   char msg[50];
@@ -450,7 +454,7 @@ int setP(){
   Serial.println(msg);
   
   //Send to AD9959:
-  dds.setPhase(ch_addr[ch],(int)(p*16384/360));//Send to AD9959
+  dds.setPhase(ch_addr[ch],(int)(p*16383/360));//Send to AD9959
   dds.update();                                //Tell AD9959 to do it
   //PID_phase_reset();                         //Restart PID phase target adaptation
   Serial.println(F("ok"));
@@ -566,7 +570,7 @@ int mesV_worker(int ch){
 //mesP
 //Phase from AD8302 measurement
 int mesP(){
-  Serial.println(v2*360/16384);
+  Serial.println(v2*360/16383);
   return v2;
 }
 
@@ -758,7 +762,7 @@ void debugMessage(){ //to be edited as needed for debugging
   Serial.print(F("Target 2:  "));
   Serial.println(target2);
   Serial.print(F("Phase Set: "));
-  Serial.println(phasePoint*360.0/16384.0);
+  Serial.println(phasePoint*360.0/16383.0);
   Serial.print(F("Matched:   "));
   Serial.println(matched);
   Serial.println(F(" "));
