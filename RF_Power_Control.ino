@@ -183,6 +183,11 @@ void helpMessage(){
 
 void(* reset) (void) = 0; //Resets the arduino, as if with reset button.
 
+void reset_hndlr(){ //says "ok" and calls reset()
+  Serial.println(F("ok"));
+  Serial.flush(); //Reset kills the buffer, so we need to force flush it
+  reset();
+}
 void badCommand(){
   Serial.println(F("ERR"));
 }
@@ -354,12 +359,15 @@ int setVtarget(){
     for(int i=0;i<num_chs;i++) setVtarget_worker(PID_chs[i],v);
     return 0;
   }
+  Serial.println(F("ok"));
   return setVtarget_worker(ch,v);
 }
 int setVtarget_worker(int ch, int v){
-  char msg[50];
-  sprintf(msg,"VT%i-> %i",ch,v);
-  Serial.println(msg);
+  if(debug){
+    char msg[50];
+    sprintf(msg,"VT%i-> %i",ch,v);
+    Serial.println(msg);
+  }
   Vtgt[ch] = v;
   return 0;
 }
@@ -413,9 +421,11 @@ int setV(){
   }                                           // Otherwise, continue
   
   //Report to user:
-  char msg[50];
-  sprintf(msg,"V%i -> %i",ch,v);
-  Serial.println(msg);
+  if(debug){
+    char msg[50];
+    sprintf(msg,"V%i -> %i",ch,v);
+    Serial.println(msg);
+  }
   
   //Send to AD9959:
   dds.setAmplitude(ch_addr[ch],v);            // Send amplitude to AD9959
@@ -449,9 +459,11 @@ int setP(){
   }
   
   //Report to user:
-  char msg[50];
-  sprintf(msg,"P%i -> %i",ch,p);
-  Serial.println(msg);
+  if(debug){
+    char msg[50];
+    sprintf(msg,"P%i -> %i",ch,p);
+    Serial.println(msg);
+  }
   
   //Send to AD9959:
   dds.setPhase(ch_addr[ch],(int)(p*16383/360));//Send to AD9959
@@ -482,9 +494,11 @@ int setF(){
   //todo
   
   //Report to user:
-  char msg[50];
-  sprintf(msg,"F%i -> %i",ch,f);
-  Serial.println(msg);
+  if(debug){
+    char msg[50];
+    sprintf(msg,"F%i -> %i",ch,f);
+    Serial.println(msg);
+  }
   
   //Send to AD9959:
   dds.setFrequency(ch_addr[ch],f);       //Send to AD9959
@@ -809,7 +823,7 @@ void setup() {
   sCmd.addCommand("debugOff",   debugOff);    //debugOff           //yep
   sCmd.addCommand("outputOn",   outputOn);    //outputOn           //turns on voltage output. (Not implemented yet)
   sCmd.addCommand("outputOff",  outputOff);   //outputOff          //turns off voltage output. (Not implemented yet)
-  sCmd.addCommand("reset",      reset);       //reset              //Resets the Arduino, as if with the reset button.
+  sCmd.addCommand("reset",      reset_hndlr); //reset              //Resets the Arduino, as if with the reset button.
 
   //PID commands:
   sCmd.addCommand("setActiveChannels", setActiveChannels); //setActiveChannels {ch,ch..} //Set which channels are active for PID control.
