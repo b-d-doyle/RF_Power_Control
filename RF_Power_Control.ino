@@ -73,7 +73,8 @@ unsigned long avg_sum_2   = 0;
 
 //PID voltage stuff
 //--------------------
-int V[4]         = {0};                      //|~V|, current voltage (currently in arbitrary AD8307 units)
+int Vset[4]      = {0};                      //|~V|, the amplitude we send to the AD9959 (0->1024)
+int Vmes[4]      = {0};                      //|~V|, current voltage (currently in arbitrary AD8307 units)
 int Vtgt[4]      = {0};                      //|~V|, the target voltage (currently in arbitrary AD8307 units)
 float Ver[4]     = {0};                      //|~V|, "error," targetV - currentV
 float int_Ver[4] = {0};                      //|~V|, time integral of error
@@ -83,7 +84,6 @@ float Vkp[4]     = {1.0,1.0,1.0,1.0};        //empirical factor controlling how 
 float Vki[4]     = {0.1,0.1,0.1,0.1};        //empirical factor controlling how much to react to integral of er
 float Vkd[4]     = {-0.2,-0.2,-0.2,-0.2};    //empirical factor controlling how much to react to d_er
 float Vcv[4]     = {0};                      //"control variable," the value by which we change our ad9959 amplitude
-int Vsetpoint[4] = {0};                      //What to tell the AD9959 to set the amplitude to
 float Vtol[4]    = {2.0,2.0,2.0,2.0};        //The tolerance; how close do we have to be to be considered matched?
 //--------------------
 
@@ -199,7 +199,7 @@ int inputChannel(){
     return -1;
   }                    // Otherwise, continue
   ch = atoi(arg);
-  if (ch<0 || ch>5){  // If ch out of range of valid channel numbers, return -2
+  if (ch<0 || ch>5){   // If ch out of range of valid channel numbers, return -2
     badCommand();
     Serial.println(F("Channel number input out of valid range (0->4)"));
     return -2;
@@ -442,7 +442,7 @@ int setP(){
   p = atof(arg);                              // Convert to float
 
   //Check if in range:
-  if( p<0 || p>360){                        // If out of range, return 1
+  if( p<0 || p>360){                          // If out of range, return 1
     Serial.println(F("Phase value out of bounds. 0->360"));
     badCommand();
     return 1;
@@ -562,9 +562,9 @@ int mesV(){
 }
 int mesV_worker(int ch){
   char msg[50];
-  sprintf(msg,"VM%i:  %i",ch,V[ch]);
+  sprintf(msg,"VM%i:  %i",ch,Vmes[ch]);
   Serial.println(msg);
-  return V[ch];
+  return Vmes[ch];
 }
 
 //mesP
@@ -641,10 +641,10 @@ void handleAnalogInputs(){
     avg_sum_2 += (unsigned long) analog_rf_in_2;
     //avg_sum_3 += (unsigned long) analog_rf_in_3;
   }
-  V[0] = avg_sum_0>>avg_sum_shift; //Voltage ch 0
-  V[1] = avg_sum_1>>avg_sum_shift; //Voltage ch 1
-  v2 = avg_sum_2>>avg_sum_shift;   //Phase ch 0 vs ch 1
-  //v3 = avg_sum_3>>avg_sum_shift; //Might need to add second AD8302?
+  Vmes[0] = avg_sum_0>>avg_sum_shift; //Voltage ch 0
+  Vmes[1] = avg_sum_1>>avg_sum_shift; //Voltage ch 1
+  v2 = avg_sum_2>>avg_sum_shift;      //Phase ch 0 vs ch 1
+  //v3 = avg_sum_3>>avg_sum_shift;    //Might need to add second AD8302?
 
   running_sum_2+=v2-log2[index2];
   log2[index2]=v2;
@@ -677,7 +677,7 @@ void PID(){
 bool PID_voltage(int ch){
   //The PID control variable is a linear combination of ERROR, (d ERROR)/dt, and sometimes int(ERROR dt)
   //Find the three parts of the control variable:
-  Ver[ch]     = Vtgt[ch] - V[ch];                                       //ERROR:         How far from target?
+  Ver[ch]     = Vtgt[ch] - Vmes[ch];                                    //ERROR:         How far from target?
   d_Ver[ch]   = Ver[ch]  - old_Ver[ch];                                 //(d ERROR)/dt:  How fast approaching/leaving target?
   if( abs(Ver[ch])<5.0 && abs(Ver[ch])!=0.0 ) int_Ver[ch]+=Ver[ch];     //int(ERROR dt): How long have we been off by how much? (Only used if pretty close)
   else int_Ver[ch]=0;                                                   //               If we're far away or right on it, set to 0.
@@ -691,11 +691,11 @@ bool PID_voltage(int ch){
   //If control variable isn't zero, apply it:
   bool request_update = false;
   if((int)Vcv[ch]!=0){
-    Vsetpoint[ch]+=(int)Vcv[ch];                                              //Update setpoint.
-    if(Vsetpoint[ch]>1024) Vsetpoint[ch]=1024;                                //check for max
-    if(Vsetpoint[ch]<0   ) Vsetpoint[ch]=0;                                   //check for min
-    dds.setAmplitude(ch_addr[ch],Vsetpoint[ch]);                              //Send ch amplitude to AD9959
-    request_update = true;                                                    //We'll update all channels at once.
+    Vset[ch]+=(int)Vcv[ch];                                             //Update setpoint.
+    if(Vset[ch]>1024) Vset[ch]=1024;                                    //check for max
+    if(Vset[ch]<0   ) Vset[ch]=0;                                       //check for min
+    dds.setAmplitude(ch_addr[ch],Vset[ch]);                             //Send ch amplitude to AD9959
+    request_update = true;                                              //We'll update all channels at once.
   }
   return request_update;
 }
@@ -750,13 +750,13 @@ void debugMessage(){ //to be edited as needed for debugging
   Serial.print(F("  "));
   Serial.println(Vtgt[1]);
   Serial.print(F("Measured:  "));
-  Serial.print(V[0]);
+  Serial.print(Vmes[0]);
   Serial.print(F("     "));
-  Serial.println(V[1]);
+  Serial.println(Vmes[1]);
   Serial.print(F("Set:       "));
-  Serial.print(Vsetpoint[0]);
+  Serial.print(Vset[0]);
   Serial.print(F("    "));
-  Serial.println(Vsetpoint[1]);
+  Serial.println(Vset[1]);
   Serial.print(F("Phase:     "));
   Serial.println(v2);
   Serial.print(F("Target 2:  "));
@@ -775,12 +775,12 @@ bool checkMatch(){
   //Check voltages okay:
   for(int i = 0; i<num_chs; i++){ //For each PID-active channel,
     int ch = PID_chs[i];
-    if( (Vtgt[ch]!=0||Vsetpoint[ch]!=0) && (fabs(V[ch]-Vtgt[ch])>Vtol[ch]) ) matched = false;
+    if( (Vtgt[ch]!=0||Vset[ch]!=0) && (fabs(Vmes[ch]-Vtgt[ch])>Vtol[ch]) ) matched = false;
     //  (Target and setpoint not both 0)&& (measured v outside tolorance )
   }
   
   //Check phase okay:
-  if(fabs(v2-target2)>m2 && (Vtgt[0]!=0||Vsetpoint[0]!=0) && (Vtgt[1]!=0||Vsetpoint[1]!=0)) matched = false;
+  if(fabs(v2-target2)>m2 && (Vtgt[0]!=0||Vset[0]!=0) && (Vtgt[1]!=0||Vset[1]!=0)) matched = false;
   // (phase outside tolorance) && (neither channel is set to 0)
 
   //If we were not matched before, but we are now, reset matchTime to right now:
