@@ -152,8 +152,8 @@ void helpMessage(){
   Serial.println(F("help              |           | Displays help message"));
   Serial.println(F("debugOn           |           | Debug mode sends periodic info via serial"));
   Serial.println(F("debugOff          |           | Yep"));
-  Serial.println(F("outputOn          |           | Turns on voltage output.  (Not implemented yet)"));
-  Serial.println(F("outputOff         |           | Turns off voltage output. (Not implemented yet)"));
+  //Serial.println(F("outputOn          |           | Turns on voltage output.  (Not implemented yet)"));
+  //Serial.println(F("outputOff         |           | Turns off voltage output. (Not implemented yet)"));
   Serial.println(F("reset             |           | Resets the Arduino, as if with the reset button."));
 
   Serial.println(F("\nPID commands:"));
@@ -234,7 +234,7 @@ int setActiveChannels(){
   
   //Save old info in case of bad input:
   int* old_chs = PID_chs;
-  int old_num = num_chs;
+  int  old_num = num_chs;
   
   //Prepare for new info:
   int* temp=NULL; //Needed for channel input loop.
@@ -246,7 +246,7 @@ int setActiveChannels(){
     if(ch==-2||ch==4||ch==5||ch==6){ //If channel number is invalid, revert to old info and make fun of user.
       Serial.println(F("Bad channel list. Reverting to old list"));
       if(PID_chs != old_chs) delete[] PID_chs; //We shouldn't even get here if PID_chs==old_chs, but better to be sure.
-      PID_chs=old_chs;
+      PID_chs = old_chs;
       num_chs = old_num;
       return -1;
     }
@@ -419,7 +419,6 @@ int setV(){
   if (ch==-1){badCommand(); Serial.println(F("Expected at least one channel number.")); return ch;}
   if (ch==-2) return ch;                                         //Channel invalid. Already sent error message.
   if (ch== 5) {Serial.println(F("WRN: CHANNEL_NONE SELECTED"));} //Warn but send it to AD9959
-  if (ch== 6) {Serial.println(F("ERR: CH6 only implemented for PID commands, not for direct AD9959 control")); return -1;}
   
   //Handle voltage:
   arg = sCmd.next();                          // Get v from the SerialCommand object buffer
@@ -433,18 +432,28 @@ int setV(){
     return 1;
   }                                           // Otherwise, continue
   
+  //Send to worker:
+  if (ch==6){ //CH 6 means all PID channels.
+    for(int i=0;i<num_chs;i++) setV_worker(PID_chs[i],v);
+  }
+  else setV_worker(ch,v);
+  
+  //Tell AD9959 to apply it:
+  dds.update();
+  
+  //Report success:
+  Serial.println(F("ok"));
+  return 0;
+}
+int setV_worker(int ch, int v){
   //Report to user:
   if(debug){
     char msg[50];
-    sprintf(msg,"V%i -> %i",ch,v);
+    sprintf(msg,"V%i-> %i",ch,v);
     Serial.println(msg);
   }
-  
   //Send to AD9959:  
   dds.setAmplitude(ch_addr[ch],v);            // Send amplitude to AD9959
-  dds.update();                               // Tell AD9959 to apply it
-  
-  Serial.println(F("ok"));
   return 0;
 }
 
@@ -460,7 +469,6 @@ int setP(){
   if (ch==-1){badCommand(); Serial.println(F("Expected at least one channel number.")); return ch;}
   if (ch==-2) return ch;                                         //Channel invalid. Already sent error message.
   if (ch== 5) {Serial.println(F("WRN: CHANNEL_NONE SELECTED"));} //Warn but send it to AD9959
-  if (ch== 6) {Serial.println(F("ERR: CH6 only implemented for PID commands, not for direct AD9959 control")); return -1;}
 
   //Handle phase:
   arg = sCmd.next();                          // Get p from the SerialCommand object buffer
@@ -474,18 +482,31 @@ int setP(){
     return 1;
   }
   
+  //Send to worker:
+  if (ch==6){ //CH 6 means all PID channels.
+    for(int i=0;i<num_chs;i++) setP_worker(PID_chs[i],p);
+  }
+  else setP_worker(ch,p);
+
+  //Ask AD9959 to apply it:
+  dds.update();
+
+  //Restart PID phase target adaptation:
+  //PID_phase_reset(); //Maybe let's don't, actually.
+  
+  //Report success:
+  Serial.println(F("ok"));
+  return 0;
+}
+int setP_worker(int ch, int p){
   //Report to user:
   if(debug){
     char msg[50];
-    sprintf(msg,"P%i -> %i",ch,p);
+    sprintf(msg,"P%i-> %i",ch,p);
     Serial.println(msg);
   }
-  
-  //Send to AD9959:
-  dds.setPhase(ch_addr[ch],(int)(p*16383/360));//Send to AD9959
-  dds.update();                                //Tell AD9959 to do it
-  //PID_phase_reset();                         //Restart PID phase target adaptation
-  Serial.println(F("ok"));
+  //Send to AD9959:  
+  dds.setPhase(ch_addr[ch],p);            // Send phase to AD9959
   return 0;
 }
 
@@ -501,7 +522,6 @@ int setF(){
   if (ch==-1){badCommand(); Serial.println(F("Expected at least one channel number.")); return ch;}
   if (ch==-2) return ch;                                         //Channel invalid. Already sent error message.
   if (ch== 5) {Serial.println(F("WRN: CHANNEL_NONE SELECTED"));} //Warn but send it to AD9959
-  if (ch== 6) {Serial.println(F("ERR: CH6 only implemented for PID commands, not for direct AD9959 control")); return -1;}
 
   //Handle frequency:
   arg = sCmd.next();                          // Get p from the SerialCommand object buffer
@@ -511,18 +531,31 @@ int setF(){
   //Check value in range:
   //todo
   
+  //Send to worker:
+  if (ch==6){ //CH 6 means all PID channels.
+    for(int i=0;i<num_chs;i++) setF_worker(PID_chs[i],f);
+  }
+  else setF_worker(ch,f);
+
+  //Tell AD9959 to apply it:
+  dds.update();
+
+  //Restart PID phase target adaptation:
+  //PID_phase_resetAdaptation();  //Actually, maybe let's don't
+
+  //Report success:
+  Serial.println(F("ok"));
+  return 0;
+}
+setF_worker(int ch, int f){
   //Report to user:
   if(debug){
     char msg[50];
-    sprintf(msg,"F%i -> %i",ch,f);
+    sprintf(msg,"F%i-> %i",ch,f);
     Serial.println(msg);
   }
-  
-  //Send to AD9959:
-  dds.setFrequency(ch_addr[ch],f);       //Send to AD9959
-  dds.update();                          //Tell AD9959 to do it
-  //PID_phase_resetAdaptation();         //Restart PID phase target adaptation
-  Serial.println(F("ok"));
+  //Send to AD9959:  
+  dds.setFrequency(ch_addr[ch],f);            // Send phase to AD9959
   return 0;
 }
 
@@ -537,12 +570,23 @@ int getV(){
   if (ch==-1){badCommand(); Serial.println(F("Expected at least one channel number.")); return ch;}
   if (ch==-2) return ch;                                         //Channel invalid. Already sent error message.
   if (ch== 5) {Serial.println(F("WRN: CHANNEL_NONE SELECTED"));} //Warn but send it to AD9959
-  if (ch== 6) {Serial.println(F("ERR: CH6 only implemented for PID commands, not for direct AD9959 control")); return -1;}
   
+  //Send to worker:
+  if (ch==6){ //CH 6 means all PID channels.
+    for(int i=0;i<num_chs;i++) getV_worker(PID_chs[i]);
+  }
+  else getV_worker(ch);
+  
+  return 0;
+}
+getV_worker(int ch){
   dds.setChannels(ch_addr[ch]);
   uint32_t response = dds.read(MyAD9959::ACR);
-  Serial.println(response & 0x7FF);
-  return response;
+  
+  char msg[50];
+  sprintf(msg,"V%i: %i",ch,response & 0x7FF);
+  Serial.println(msg);
+  return 0;
 }
 //getP
 //Phase from AD9959 register
@@ -555,12 +599,23 @@ int getP(){
   if (ch==-1){badCommand(); Serial.println(F("Expected at least one channel number.")); return ch;}
   if (ch==-2) return ch;                                         //Channel invalid. Already sent error message.
   if (ch== 5) {Serial.println(F("WRN: CHANNEL_NONE SELECTED"));} //Warn but send it to AD9959
-  if (ch== 6) {Serial.println(F("ERR: CH6 only implemented for PID commands, not for direct AD9959 control")); return -1;}
   
+  //Send to worker:
+  if (ch==6){ //CH 6 means all PID channels.
+    for(int i=0;i<num_chs;i++) getP_worker(PID_chs[i]);
+  }
+  else getV_worker(ch);
+
+  return 0;
+}
+getP_worker(int ch){
   dds.setChannels(ch_addr[ch]);
   uint32_t response = dds.read(MyAD9959::CPOW);
-  Serial.println(response*360/16383);
-  return response;
+  
+  char msg[50];
+  sprintf(msg,"P%i: %i",ch,response*360/16383);
+  Serial.println(msg);
+  return 0;
 }
 //getF
 //Frequency from AD9959 register
@@ -573,16 +628,26 @@ int getF(){
   if (ch==-1){badCommand(); Serial.println(F("Expected at least one channel number.")); return ch;}
   if (ch==-2) return ch;                                         //Channel invalid. Already sent error message.
   if (ch== 5) {Serial.println(F("WRN: CHANNEL_NONE SELECTED"));} //Warn but send it to AD9959
-  if (ch== 6) {Serial.println(F("ERR: CH6 only implemented for PID commands, not for direct AD9959 control")); return -1;}
+
+  //Send to worker:
+  if (ch==6){ //CH 6 means all PID channels.
+    for(int i=0;i<num_chs;i++) getF_worker(PID_chs[i]);
+  }
+  else getF_worker(ch);
+
+  return 0;
+}
+getF_worker(int ch){
   
   dds.setChannels(ch_addr[ch]);
-  uint32_t response = dds.read(MyAD9959::CSR);
-  Serial.println(response,HEX);
-  
-  //uint32_t response = dds.read(MyAD9959::CFTW);
-  response = dds.read(MyAD9959::CFTW);
+  uint32_t response = dds.read(MyAD9959::CFTW);
   Serial.println(response,HEX); //Still need to decode the CFTW (Channel Frequency Tuning Word). See MyAD9959::frequencyDelta()
-  return response;
+  //I think this is it??:
+  f = (((uint64_t)response << dds.shift) - dds.reciprocal/16) / dds.reciprocal
+  char msg[50];
+  sprintf(msg,"F%i: %i",ch,f);
+  Serial.println(msg);
+  return 0;
 }
 
 //mesV
