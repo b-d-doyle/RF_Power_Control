@@ -547,7 +547,7 @@ int setF(){
   Serial.println(F("ok"));
   return 0;
 }
-setF_worker(int ch, int f){
+int setF_worker(int ch, int f){
   //Report to user:
   if(debug){
     char msg[50];
@@ -579,7 +579,7 @@ int getV(){
   
   return 0;
 }
-getV_worker(int ch){
+int getV_worker(int ch){
   dds.setChannels(ch_addr[ch]);
   uint32_t response = dds.read(MyAD9959::ACR);
   
@@ -608,7 +608,7 @@ int getP(){
 
   return 0;
 }
-getP_worker(int ch){
+int getP_worker(int ch){
   dds.setChannels(ch_addr[ch]);
   uint32_t response = dds.read(MyAD9959::CPOW);
   
@@ -637,13 +637,13 @@ int getF(){
 
   return 0;
 }
-getF_worker(int ch){
+int getF_worker(int ch){
   
   dds.setChannels(ch_addr[ch]);
   uint32_t response = dds.read(MyAD9959::CFTW);
   Serial.println(response,HEX); //Still need to decode the CFTW (Channel Frequency Tuning Word). See MyAD9959::frequencyDelta()
   //I think this is it??:
-  f = (((uint64_t)response << dds.shift) - dds.reciprocal/16) / dds.reciprocal
+  uint32_t f = (((uint64_t)response << dds.shift) - dds.reciprocal/16) / dds.reciprocal;
   char msg[50];
   sprintf(msg,"F%i: %i",ch,f);
   Serial.println(msg);
