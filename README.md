@@ -1,4 +1,7 @@
 # RF_Power_Control
+
+https://github.com/b-d-doyle/RF_Power_Control.git
+
 Arduino scripts for controlling an rf plasma source consisting of...
 - AD9959
 - Other stuff
